@@ -49,8 +49,20 @@ int main() {
     map_waypoints_dx.push_back(d_x);
     map_waypoints_dy.push_back(d_y);
   }
+  
+  // Let Car's inital lane is the middle lane.
+  int car_lane = 1;
+  
+  // Reference Velocity
+  double car_vel = 0.0;
+  
+  // Max Velocity
+  double MAX_VEL = 49.5;
+  
+  // Max acceleration
+  double MAX_ACC = 0.447;
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
+  h.onMessage([&car_lane, &car_vel, &MAX_VEL, &MAX_ACC,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
                &map_waypoints_dx,&map_waypoints_dy]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
@@ -88,16 +100,36 @@ int main() {
           //   of the road.
           auto sensor_fusion = j[1]["sensor_fusion"];
 
-          json msgJson;
-
+          // Size of the previous path
+          int prev_size = previous_path_x.size();
+          
+          if (prev_size > 0) {  // If previous path exists, set car "s" value to the end of previous path
+          	car_s = end_path_s;
+          }
+          
+          // Look around to check and see where onstacle vehicles are present
+          auto look_out_for_obstacles = check_if_vehicles_around(sensor_fusion, prev_size, car_s, car_lane);
+          bool obs_ahead = look_out_for_obstacles.first[0];
+          bool obs_left = look_out_for_obstacles.first[1];
+          bool obs_right = look_out_for_obstacles.first[2];
+          double distance_to_collision = look_out_for_obstacles.second[0];
+          double obstacle_velocity = look_out_for_obstacles.second[1];
+          
+          // Get target lane and target velocity
+          auto behaviour_plan = get_resultant_speed_and_lane(obs_ahead, obs_left, obs_right, car_lane, car_vel, MAX_VEL, MAX_ACC, distance_to_collision, obstacle_velocity);
+          car_lane = (int) behaviour_plan[0];
+          car_vel = behaviour_plan[1];
+          
+          // Next 50 values
           vector<double> next_x_vals;
-          vector<double> next_y_vals;
-
-          /**
-           * TODO: define a path made up of (x,y) points that the car will visit
-           *   sequentially every .02 seconds
-           */
-
+  		  vector<double> next_y_vals;
+          
+          // Generate Trajectory
+          auto new_trajectory = generate_smooth_trajectory(prev_size, car_lane, car_vel, car_x, car_y, car_yaw, previous_path_x, previous_path_y, car_s, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+          next_x_vals = new_trajectory[0];
+          next_y_vals = new_trajectory[1];
+          
+          json msgJson;
 
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
